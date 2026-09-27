@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flex Schedule</title>
+  <link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Flex Schedule</h1></div>
+  <nav id="tabs">
+    <button data-view="blick" class="on">Dashboard</button>
+    <button data-view="anlagen">Assets</button>
+    <button data-view="fahrplan">Day-ahead schedule</button>
+    <button data-view="genau">Accuracy</button>
+  </nav>
+  <div class="spacer"></div>
+  <label class="standortwahl">Site <select id="standort-wahl"></select></label>
+  <button class="btn" id="standort-neu">New site</button>
+  <button class="btn" id="beispiel-neu" title="Creates a fictional cold store with 12 months of load data, production plan, calls and example prices">Create example cold store</button>
+</header>
+
+<div id="meldung" class="meldung hidden"></div>
+
+<main>
+  <!-- ================================ DASHBOARD ================================ -->
+  <section id="view-blick" class="view on">
+    <div class="toolbar">
+      <label>Day <input type="date" id="blick-datum"></label>
+      <span id="blick-quelle"></span>
+      <div class="spacer"></div>
+      <a class="btn btn-primary" id="blick-csv" href="#" download title="The 96 quarter hours of the optimised schedule with balancing reserve, shifting and peak shaving">96 quarter hours as CSV</a>
+    </div>
+    <div class="inhalt dashboard">
+      <p id="blick-leer">Please select a site or create the example cold store.</p>
+      <div id="blick-body" class="hidden">
+        <div class="kopfzeile">
+          <h2 id="blick-titel">Plant and day</h2>
+          <p class="lead-kurz">A generic plant with about 1 MW of flexible power. Per quarter hour: this much power it makes available, this is what the day looks like with the flex schedule, this is roughly what it is worth. Values are ranges from safe to expected.</p>
+        </div>
+        <div class="kacheln fuenf" id="blick-kacheln"></div>
+
+        <h2>Year estimate, last 12 months <span class="info" title="The same optimisation run over every complete day of the last 12 months. Balancing reserve and day-ahead are scaled to 365 days. Peak shaving compares the annual peak before and after. All prices for balancing reserve and the demand charge are assumptions per site.">i</span></h2>
+        <div id="blick-jahr" class="jahr"></div>
+
+        <div class="charts">
+          <div class="chart-box"><h3>Load before and after, band is the balancing reserve held <button class="btn btn-sm png-knopf" data-png="blick-last">PNG</button> <span class="info" title="Blue: measured day. Orange: the same day with the flex schedule, peak shaved and load shifted from expensive into cheap hours. The band around orange shows how far the plant can go down or up on call. Shaded areas: use of the four-hour block.">i</span></h3><div id="blick-last" class="chart"></div></div>
+          <div class="chart-box"><h3>Flexible power per quarter hour: used, held, free <button class="btn btn-sm png-knopf" data-png="blick-flex">PNG</button> <span class="info" title="Upwards the possible load reduction, downwards the possible load increase, both the safe value (P10). Strong: needed for peak shaving and shifting. Medium: held as balancing reserve. Pale: free.">i</span></h3><div id="blick-flex" class="chart"></div></div>
+        </div>
+
+        <h2>The schedule, 96 quarter hours <button class="btn btn-sm png-knopf" data-png="blick-streifen">PNG</button> <span class="info" title="The end product of the day: per quarter hour the balancing reserve held in both directions, the day-ahead shift and the peak shaving. Colour is power. Click a cell to jump to the row in the table.">i</span></h2>
+        <div id="blick-streifen" class="heatmap streifen"></div>
+        <div class="tablewrap hoch"><table id="blick-96" class="tabelle kompakt"><thead><tr><th>From</th><th class="zahl">Load before MW</th><th class="zahl">Load after MW</th><th class="zahl">aFRR positive MW</th><th class="zahl">aFRR negative MW</th><th class="zahl">Reduction day-ahead MW</th><th class="zahl">Day-ahead extra buying MW</th><th class="zahl">Peak shaving MW</th><th class="zahl">Price EUR/MWh</th><th class="zahl">Revenue EUR</th></tr></thead><tbody></tbody></table></div>
+
+        <details class="herleitung">
+          <summary>How it is derived: price, revenue per quarter hour, blocks, assumptions</summary>
+          <div class="charts">
+            <div class="chart-box"><h3>Day-ahead price</h3><div id="blick-preis" class="chart"></div></div>
+            <div class="chart-box"><h3>Revenue per quarter hour <span class="info" title="Upwards the capacity price of the balancing reserve held and the value of the load reduction at the day-ahead price. Downwards the cost of catching up. Activation payments for balancing reserve are not counted.">i</span></h3><div id="blick-erloes" class="chart"></div></div>
+          </div>
+          <h3>Four-hour blocks</h3>
+          <div class="tablewrap"><table id="blick-bloecke" class="tabelle"><thead><tr><th>Block</th><th>Use</th><th class="zahl" title="Average positive balancing reserve (load reduction on call) in the 16 quarter hours">aFRR positive MW</th><th class="zahl" title="Average negative balancing reserve (load increase on call)">aFRR negative MW</th><th class="zahl">Balancing reserve EUR</th><th class="zahl">Price average EUR/MWh</th><th class="zahl">Day-ahead EUR</th><th class="zahl">Shifted MWh</th><th class="zahl">Shaved MWh</th></tr></thead><tbody></tbody></table></div>
+          <h3>How the revenue comes about</h3>
+          <div id="blick-text"></div>
+          <ul id="blick-hinweise" class="hinweise"></ul>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================ ASSETS ================================ -->
+  <section id="view-anlagen" class="view">
+    <div class="untertabs" data-gruppe="anl">
+      <button data-tab="anl-anlagen" class="on">Assets</button>
+      <button data-tab="anl-fenster">Release windows</button>
+      <button data-tab="anl-lastgang">Load data</button>
+      <button data-tab="anl-standort">Site</button>
+    </div>
+    <div class="inhalt">
+      <div class="untertab on" id="anl-anlagen">
+        <div class="kopfzeile"><h2>Assets</h2><button class="btn btn-primary" id="anlage-neu">New asset</button></div>
+        <p>Each asset has ten parameters. From them the schedule computes the flexible power per quarter hour, without a model and traceable. Click a row to open the asset.</p>
+        <div class="tablewrap"><table id="anlagen-tabelle" class="tabelle">
+          <thead><tr>
+            <th>Asset</th><th>Type</th>
+            <th class="zahl" title="Highest electrical power of the asset">Rated MW</th>
+            <th class="zahl" title="Power that must never be undercut, for example a compressor that always runs">Min MW</th>
+            <th class="zahl" title="How fast the power can be changed">Ramp MW/min</th>
+            <th class="zahl" title="How long a call may last at most">Max duration min</th>
+            <th class="zahl" title="Minimum pause between two calls">Recovery min</th>
+            <th class="zahl" title="Energy that can be shifted, for example the cold stored in the goods or in a storage">Buffer MWh</th>
+            <th class="zahl" title="Share of the asset in the total load of the site. From this the expected load of the asset per quarter hour is derived">Load share %</th>
+            <th class="zahl" title="Above this goods intake in tons per hour no load reduction is allowed">Limit t/h</th>
+            <th title="Only for switchable blocks: when they run according to the plan">Run times</th>
+            <th class="zahl">Priority</th><th>Active</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table></div>
+      </div>
+
+      <div class="untertab" id="anl-fenster">
+        <h2>Release windows of the plant</h2>
+        <p>Only in these times may the pool operator call. Without a window there is no flexibility, whatever the technology could do.</p>
+        <div class="tablewrap"><table id="fenster-tabelle" class="tabelle">
+          <thead><tr><th>Weekday</th><th>From</th><th>To</th><th title="Upper limit for load reduction in this window, empty means no limit">Max reduction MW</th><th title="Upper limit for load increase in this window, empty means no limit">Max increase MW</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table></div>
+        <div class="aktionen"><button class="btn" id="fenster-zeile">Add window</button><button class="btn btn-primary" id="fenster-speichern">Save windows</button></div>
+      </div>
+
+      <div class="untertab" id="anl-lastgang">
+        <h2>Load data</h2>
+        <p id="lastgang-stand">No load data available.</p>
+        <form id="lastgang-form" class="formular zeile">
+          <input type="file" name="datei" accept=".csv,text/csv" required>
+          <button type="submit" class="btn btn-primary">Upload load data</button>
+          <span class="info" title="CSV with a time column (time, or date and time of day) and power in MW or kW, quarter-hour values. Optionally a temperature column. Example: time;p_kw;temp_c">i</span>
+        </form>
+        <p>For the days ahead one row per quarter hour with temperature and empty power is enough. That is the temperature forecast.</p>
+        <p>New values for the same times replace the old ones. So the load data can be topped up month by month.</p>
+      </div>
+
+      <div class="untertab" id="anl-standort">
+        <h2>Site</h2>
+        <form id="standort-form" class="formular">
+          <label>Name <input name="name" required></label>
+          <label>Location <input name="ort"></label>
+          <label>Industry <input name="branche"></label>
+          <label>Peak load in MW <span class="info" title="Highest measured power of the site. Reference for the forecast error in percent.">i</span> <input name="spitzenlast_mw" type="number" step="0.01" min="0"></label>
+          <label>Grid connection in MW <input name="netzanschluss_mw" type="number" step="0.01" min="0"></label>
+          <label>Pool operator <span class="info" title="Who markets the flexibility and receives the availability report.">i</span> <input name="bsp"></label>
+          <label>Buffer state at start of day in percent <span class="info" title="Share of the buffer available for load reduction. The rest is available for load increase. 50 means: the asset sits in the middle of its tolerance band.">i</span> <input name="puffer_start_prozent" type="number" step="1" min="0" max="100"></label>
+          <label>Catch-up from the previous day in MWh <span class="info" title="Energy that still has to be caught up after a call on the previous day. Until it is caught up there is no load reduction.">i</span> <input name="nachhol_mwh" type="number" step="0.01" min="0"></label>
+          <label>Additional safety margin in percent <span class="info" title="Deducted additionally from the marketable value (P10). Normally 0, because the uncertainty is already in the band.">i</span> <input name="abschlag_prozent" type="number" step="1" min="0" max="100"></label>
+          <label>Forecast method <span class="info" title="Day type: median of the last weeks per quarter hour, corrected for temperature and goods intake. LightGBM: quantile regression, only if the package is installed.">i</span>
+            <select name="baseline_methode"><option value="typtag">Day type with correction</option><option value="lightgbm">LightGBM quantile regression</option></select></label>
+          <label>Weeks in the day-type profile <input name="typtag_wochen" type="number" step="1" min="2" max="26"></label>
+          <label>Demand charge in EUR per kW and year <span class="info" title="Grid fee for the annual peak load. Used to value the shaved peak. Assumption, please take from the grid use contract.">i</span> <input name="leistungspreis_eur_kw_a" type="number" step="1" min="0"></label>
+          <label>aFRR positive in EUR per MW and hour <span class="info" title="Fallback capacity price for positive aFRR held (load reduction on call). If a capacity price file is loaded (data/kapazitaetspreise CSV via POST /api/preise/kapazitaet/upload), its prices per four-hour block are used instead.">i</span> <input name="afrr_eur_mw_h" type="number" step="0.5" min="0"></label>
+          <label>aFRR negative in EUR per MW and hour <span class="info" title="Assumed capacity price for negative aFRR held (load increase on call).">i</span> <input name="afrr_neg_eur_mw_h" type="number" step="0.5" min="0"></label>
+          <div class="aktionen"><button type="submit" class="btn btn-primary">Save site</button><button type="button" class="btn" id="standort-loeschen">Delete site</button></div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== DAY-AHEAD SCHEDULE ============================== -->
+  <section id="view-fahrplan" class="view">
+    <div class="toolbar">
+      <label>Day <input type="date" id="datum"></label>
+      <button class="btn" id="neu-rechnen" title="Recomputes the schedule with the current assets, windows and production plan. An existing approval expires.">Recompute</button>
+      <span id="status-pille" class="pille">Draft</span>
+    </div>
+    <div class="untertabs" data-gruppe="fp">
+      <button data-tab="fp-plan" class="on">Schedule</button>
+      <button data-tab="fp-kurven">Curves</button>
+      <button data-tab="fp-bloecke">Blocks and table</button>
+      <button data-tab="fp-produktion">Production plan</button>
+      <button data-tab="fp-freigabe">Approval and export</button>
+    </div>
+    <div class="inhalt">
+      <p id="fahrplan-leer">Please select a site or create the example cold store.</p>
+      <div id="fahrplan-body" class="hidden">
+        <div class="untertab on" id="fp-plan">
+          <div class="kacheln" id="kacheln"></div>
+          <ul id="hinweise" class="hinweise"></ul>
+          <h2>Flexible power per quarter hour <span class="info" title="Colour shows the marketable power (P10). Click a quarter hour to see below which asset limits it.">i</span></h2>
+          <div id="heatmap" class="heatmap"></div>
+          <h2 id="detail-titel">Quarter hour</h2>
+          <div id="detail"></div>
+        </div>
+
+        <div class="untertab" id="fp-kurven">
+          <div class="charts">
+            <div class="chart-box"><h3>Marketable power (P10) and expected value (P50)</h3><div id="chart-flex" class="chart"></div></div>
+            <div class="chart-box"><h3>Expected load of the site with band P10 to P90</h3><div id="chart-last" class="chart"></div></div>
+          </div>
+          <h2>How the forecast was made</h2>
+          <div id="prognose-erklaerung"></div>
+        </div>
+
+        <div class="untertab" id="fp-bloecke">
+          <h2>Four-hour blocks <span class="info" title="mFRR is offered in blocks of four hours. Only what is safely there in all 16 quarter hours counts. aFRR is offered per quarter hour, its block value is the minimum of the 16 quarter hours.">i</span></h2>
+          <div class="tablewrap"><table id="bloecke" class="tabelle"><thead><tr><th>Block</th><th class="zahl">Reduction safe MW</th><th class="zahl">of which aFRR</th><th class="zahl">of which mFRR</th><th class="zahl">Increase safe MW</th><th class="zahl">of which aFRR</th><th class="zahl">of which mFRR</th></tr></thead><tbody></tbody></table></div>
+          <h2>All 96 quarter hours</h2>
+          <div class="tablewrap"><table id="tabelle96" class="tabelle"><thead><tr><th>From</th><th class="zahl">Load P50</th><th class="zahl">Reduction P50</th><th class="zahl">Reduction P10</th><th class="zahl">sustainable 15 min</th><th class="zahl">sustainable 1 h</th><th class="zahl">sustainable 4 h</th><th>Product</th><th>Confidence</th><th>Limit</th><th class="zahl">Increase P50</th><th class="zahl">Increase P10</th><th>Product</th><th class="zahl">Price EUR/MWh</th></tr></thead><tbody></tbody></table></div>
+        </div>
+
+        <div class="untertab" id="fp-produktion">
+          <h2>Production plan for this day <span class="info" title="Shift, goods intake in tons per hour and blocks per hour. The plan determines the expected load and whether an asset may be reduced. Block: name of the asset or the word all.">i</span></h2>
+          <p>The plan is the bottleneck, not the model. Without a plan the schedule is only statistics.</p>
+          <div class="aktionen">
+            <button class="btn" id="plan-werktag">Weekday template</button>
+            <button class="btn" id="plan-leer">Clear all</button>
+            <button class="btn btn-primary" id="plan-speichern">Save plan and recompute</button>
+          </div>
+          <div class="tablewrap"><table id="plan-tabelle" class="tabelle plan"><thead><tr><th>Hour</th><th>Shift</th><th>Goods intake t/h</th><th>Block</th></tr></thead><tbody></tbody></table></div>
+          <h2>Plan as file</h2>
+          <form id="plan-upload" class="formular zeile"><input type="file" name="datei" accept=".csv,text/csv" required><button type="submit" class="btn">Upload plan as CSV</button><span class="info" title="CSV with time, goods intake, shift and block. Hourly values are spread over quarter hours. Several days in one file are allowed.">i</span></form>
+        </div>
+
+        <div class="untertab" id="fp-freigabe">
+          <h2>Approval by production management</h2>
+          <p>Physics says what is possible. Production management says what is allowed. Only after their approval does the availability report go to the pool operator.</p>
+          <div id="freigabe-stand" class="kv"></div>
+          <div id="freigabe-aktionen" class="aktionen"></div>
+          <h2>Export</h2>
+          <div class="aktionen">
+            <a class="btn" id="export-csv" href="#" download>Schedule as CSV</a>
+            <a class="btn" id="export-json" href="#" download>Schedule as JSON</a>
+            <a class="btn btn-primary" id="export-verf" href="#" download title="Availability report for the pool operator, only after approval">Availability report</a>
+          </div>
+          <p>The availability report contains per quarter hour the marketable power (P10) in kilowatts, aFRR positive and negative, the sustainable duration and the product. The column layout is generic and gets adapted to the upload format of the pool operator.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== ACCURACY ============================== -->
+  <section id="view-genau" class="view">
+    <div class="toolbar">
+      <label>Backtest in days <input type="number" id="genau-tage" value="90" min="14" max="365" step="1"></label>
+      <button class="btn" id="genau-laden">Run backtest</button>
+    </div>
+    <div class="untertabs" data-gruppe="ge">
+      <button data-tab="ge-kennzahlen" class="on">Metrics</button>
+      <button data-tab="ge-tag">Day in detail</button>
+      <button data-tab="ge-abrufe">Calls</button>
+      <button data-tab="ge-nachweis">Verification</button>
+    </div>
+    <div class="inhalt">
+      <p id="genau-leer">Please select a site.</p>
+      <div id="genau-body" class="hidden">
+        <div class="untertab on" id="ge-kennzahlen">
+          <div class="kacheln" id="genau-kacheln"></div>
+          <p id="genau-hinweis"></p>
+          <div class="charts">
+            <div class="chart-box"><h3>Error per day in the backtest, click opens the day</h3><div id="chart-tage" class="chart"></div></div>
+            <div class="chart-box"><h3>Distribution of the deviation actual minus forecast</h3><div id="chart-hist" class="chart"></div></div>
+          </div>
+          <div class="charts">
+            <div class="chart-box"><h3>Error per hour of the day</h3><div id="chart-stunden" class="chart"></div></div>
+          </div>
+        </div>
+        <div class="untertab" id="ge-tag">
+          <div class="kopfzeile"><h2 id="tag-titel">Baseline against actual</h2><label>Day <input type="date" id="tag-datum"></label></div>
+          <p>The baseline is the forecast from the day before. Grey areas are calls.</p>
+          <div class="chart-box"><div id="chart-tag" class="chart"></div></div>
+        </div>
+        <div class="untertab" id="ge-abrufe">
+          <h2>Calls and delivery <span class="info" title="Delivered is the baseline (forecast from the day before) minus the measured load in the call window. Delivery is delivered divided by requested, at most 100 percent.">i</span></h2>
+          <div class="tablewrap"><table id="abrufe-tabelle" class="tabelle"><thead><tr><th>Start</th><th class="zahl">Duration min</th><th>Direction</th><th class="zahl">Requested MW</th><th class="zahl">Baseline MW</th><th class="zahl">Actual MW</th><th class="zahl">Delivered MW</th><th class="zahl">Delivery</th></tr></thead><tbody></tbody></table></div>
+          <h2>Add a call</h2>
+          <form id="abruf-form" class="formular zeile">
+            <label>Start <input type="datetime-local" name="start" step="900" required></label>
+            <label>Duration min <input type="number" name="dauer_min" value="60" min="15" step="15" required></label>
+            <label>MW <input type="number" name="p_soll_mw" value="1.0" min="0" step="0.05" required></label>
+            <label>Direction <select name="richtung"><option value="pos">Load reduction</option><option value="neg">Load increase</option></select></label>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </form>
+        </div>
+        <div class="untertab" id="ge-nachweis">
+          <h2>Verification report</h2>
+          <p>Baseline against actual per day, forecast error in MW, calls with delivery. This is the basis for settling with the pool operator.</p>
+          <form class="formular zeile">
+            <label>From <input type="date" id="nachweis-von"></label>
+            <label>To <input type="date" id="nachweis-bis"></label>
+            <a class="btn btn-primary" id="nachweis-csv" href="#" download>Verification as CSV</a>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="anlage-dlg">
+  <form id="anlage-form" method="dialog" class="formular">
+    <h2 id="anlage-dlg-titel">Asset</h2>
+    <label>Name <input name="name" required></label>
+    <label>Type <span class="info" title="Refrigeration, heat, pump, ventilation and electrolysis compute via buffer and minimum load. Switchable block: runs at fixed times and can be shifted, for example defrost.">i</span>
+      <select name="typ"><option value="kaelte">Refrigeration</option><option value="waerme">Heat</option><option value="pumpe">Pump</option><option value="lueftung">Ventilation</option><option value="elektrolyse">Electrolysis</option><option value="schaltbar">Switchable block</option><option value="sonstiges">Other</option></select></label>
+    <div class="zwei">
+      <label>Rated power MW <input name="p_nenn_mw" type="number" step="0.01" min="0" required></label>
+      <label>Minimum load MW <span class="info" title="It cannot go below this, for example because one compressor must always run.">i</span> <input name="p_min_mw" type="number" step="0.01" min="0" value="0"></label>
+      <label>Ramp MW per minute <span class="info" title="aFRR needs the full power after 5 minutes, mFRR after 12.5 minutes.">i</span> <input name="rampe_mw_min" type="number" step="0.01" min="0" value="0.1"></label>
+      <label>Maximum call duration min <input name="max_dauer_min" type="number" step="15" min="15" value="60"></label>
+      <label>Recovery time min <span class="info" title="Minimum pause until the next call. Today only used as a note.">i</span> <input name="erholzeit_min" type="number" step="15" min="0" value="60"></label>
+      <label>Buffer MWh electrical <span class="info" title="How much electrical energy can be shifted. Cold store: heat capacity of the goods times the allowed temperature change, divided by the coefficient of performance of the refrigeration plant. 0 means no buffer, then only the call duration counts.">i</span> <input name="puffer_mwh" type="number" step="0.1" min="0" value="0"></label>
+      <label>Load share in percent <span class="info" title="Share of the total load of the site. Expected load of the asset is share times forecast of the site, at most rated power. If a sub-meter exists, its average divided by the site average is the right value.">i</span> <input name="anteil_prozent" type="number" step="1" min="0" max="100" value="0"></label>
+      <label>Limit goods intake t/h <span class="info" title="Above this goods intake no load reduction is allowed, because the goods must be cooled quickly. Empty means no limit.">i</span> <input name="plan_grenze_t_h" type="number" step="1" min="0"></label>
+      <label>Run times (switchable only) <span class="info" title="When the block runs according to the plan, for example 02:00-02:45, 14:00-14:45">i</span> <input name="laufzeiten" placeholder="02:00-02:45, 14:00-14:45"></label>
+      <label>Priority <input name="prioritaet" type="number" step="1" min="1" value="1"></label>
+    </div>
+    <label class="chk"><input type="checkbox" name="aktiv" checked> Asset is active</label>
+    <label>Note <textarea name="notiz" rows="2"></textarea></label>
+    <div class="dlg-actions">
+      <button type="button" class="btn" id="anlage-abbruch">Cancel</button>
+      <button type="button" class="btn" id="anlage-loeschen">Delete</button>
+      <button type="submit" class="btn btn-primary">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="freigabe-dlg">
+  <form id="freigabe-form" method="dialog" class="formular">
+    <h2 id="freigabe-titel">Approval</h2>
+    <p id="freigabe-text"></p>
+    <label>Name <input name="name" required></label>
+    <label>Comment <textarea name="kommentar" rows="3"></textarea></label>
+    <div class="dlg-actions">
+      <button type="button" class="btn" id="freigabe-abbruch">Cancel</button>
+      <button type="submit" class="btn btn-primary" id="freigabe-ok">Confirm</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="standort-dlg">
+  <form id="standort-neu-form" method="dialog" class="formular">
+    <h2>New site</h2>
+    <label>Name <input name="name" required></label>
+    <label>Location <input name="ort"></label>
+    <label>Peak load MW <input name="spitzenlast_mw" type="number" step="0.01" min="0" value="0"></label>
+    <div class="dlg-actions">
+      <button type="button" class="btn" id="standort-abbruch">Cancel</button>
+      <button type="submit" class="btn btn-primary">Create</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="tooltip" class="tooltip hidden"></div>
+<script src="/web/app.js"></script>
+<script src="/web/blick.js"></script>
+</body>
+</html>
